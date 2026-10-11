@@ -178,7 +178,7 @@ def douyin(st):
 XHS_ITEMS = r"""(()=>{const out=[];document.querySelectorAll('section.note-item').forEach((s,i)=>{const w=s.querySelector('.like-wrapper');if(!w)return;
 const r=w.getBoundingClientRect();if(r.top<80||r.bottom>innerHeight-20)return;
 const t=(s.querySelector('.title,a.title span,.footer .title')||{}).innerText||'';const c=(w.innerText||'').trim();
-out.push({i,title:t.slice(0,60),cnt:c,active:/active|liked/.test(w.className)||!!w.querySelector('.like-active,[class*=active]'),x:r.x+r.width/2,y:r.y+r.height/2})});return out})()"""
+out.push({i,title:t.slice(0,60),cnt:c,active:(()=>{const u=w.querySelector('use');const hr=u?(u.getAttribute('href')||u.getAttribute('xlink:href')||''):'';return hr==='#liked'})(),x:r.x+r.width/2,y:r.y+r.height/2})});return out})()"""
 
 def xhs(st):
     kw = pick_kw(st, "xhs")
