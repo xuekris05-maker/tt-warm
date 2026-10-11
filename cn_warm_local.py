@@ -95,9 +95,12 @@ def close_tab(tid):
     except Exception:
         pass
 
-BLOCK_JS = r"""(()=>{const t=(document.body?document.body.innerText:'').slice(0,4000);
-if(document.querySelector('#captcha_container,.captcha_verify_container,[id*=captcha],[class*=captcha],.red-captcha,.baxia-dialog,#nc_1_wrapper'))return 'captcha';
-if(/请完成(安全)?验证|滑动.{0,6}验证|拖动.{0,6}滑块|访问频繁|操作频繁|账号(存在)?异常|违规|封禁/.test(t))return 'risk';
+BLOCK_JS = r"""(()=>{const vis=e=>{if(!e)return false;const r=e.getBoundingClientRect();const cs=getComputedStyle(e);
+return r.width>120&&r.height>80&&cs.display!='none'&&cs.visibility!='hidden'&&+cs.opacity>0.1};
+for(const sel of ['#captcha_container','.captcha_verify_container','.captcha-verify-container','#captcha-verify-image','.red-captcha','.baxia-dialog','#nc_1_wrapper','.secsdk-captcha-drag-icon','iframe[src*=captcha]','iframe[src*=verify]']){
+ for(const e of document.querySelectorAll(sel)){if(vis(e))return 'captcha:'+sel}}
+const t=(document.body?document.body.innerText:'').slice(0,4000);
+let m=t.match(/请完成(安全)?验证|滑动.{0,6}验证|拖动.{0,6}滑块|访问频繁|操作频繁|账号(存在)?异常|违规|封禁/);if(m)return 'risk:'+m[0];
 if(/扫码登录|登录后(查看|即可)|手机号登录|请先登录/.test(t)&&t.length<1500)return 'login';
 return ''})()"""
 
@@ -179,12 +182,13 @@ out.push({i,title:t.slice(0,60),cnt:c,active:/active|liked/.test(w.className)||!
 
 def xhs(st):
     kw = pick_kw(st, "xhs")
-    tid, sid = open_tab("https://www.xiaohongshu.com/search_result?keyword=" + urllib.parse.quote(kw) + "&source=web_search_result_notes&type=51")
+    url0 = "https://www.xiaohongshu.com/search_result?keyword=" + urllib.parse.quote(kw) + "&source=web_search_result_notes&type=51"
+    tid, sid = open_tab(url0)
     try:
         b = blocked(sid)
         if b:
             return "STOP 小红书出现%s，已停止小红书" % b
-        t0, liked, seen = time.time(), 0, set()
+        t0, liked, seen, tries, diag = time.time(), 0, set(), 0, ""
         dur = random.uniform(180, 300)
         while time.time() - t0 < dur:
             items = [x for x in (ev(sid, XHS_ITEMS) or []) if x["title"] not in seen]
@@ -194,15 +198,30 @@ def xhs(st):
             if cand and st["xhs"] < CAP["xhs"] and random.random() < 0.35:
                 it = random.choice(cand)
                 nap(3, 8)
+                tries += 1
                 click(sid, it["x"], it["y"]); nap(2, 3)
                 after = [x for x in (ev(sid, XHS_ITEMS) or []) if x["title"] == it["title"]]
-                if after and (after[0]["active"] or after[0]["cnt"] != it["cnt"]):
+                ok = after and (after[0]["active"] or after[0]["cnt"] != it["cnt"])
+                if not ok:
+                    ev(sid, "(()=>{const s=document.querySelectorAll('section.note-item')[%d];const w=s&&s.querySelector('.like-wrapper');if(w){(w.querySelector('svg,.like-icon,span')||w).dispatchEvent(new MouseEvent('click',{bubbles:true}));}})()" % it["i"])
+                    nap(2, 3)
+                    after = [x for x in (ev(sid, XHS_ITEMS) or []) if x["title"] == it["title"]]
+                    ok = after and (after[0]["active"] or after[0]["cnt"] != it["cnt"])
+                if not diag:
+                    diag = "before=%s/%s after=%s cls=%s url=%s" % (it["cnt"], it["active"], (after[0]["cnt"], after[0]["active"]) if after else None,
+                            ev(sid, "(()=>{const s=document.querySelectorAll('section.note-item')[%d];const w=s&&s.querySelector('.like-wrapper');return w?w.className.slice(0,60):''})()" % it["i"]),
+                            (ev(sid, "location.href") or "")[:60])
+                if "search_result" not in (ev(sid, "location.href") or "search_result"):
+                    call("Page.navigate", {"url": url0}, sid); nap(5, 7)
+                if ok:
                     st["xhs"] += 1; liked += 1; save_state(st)
             nap(6, 18)
             scroll(sid)
             if blocked(sid):
                 return "STOP 小红书浏览中出现验证/风控，已停止（赞%d）" % liked
-        return "小红书「%s」浏览%d篇 赞%d（今日%d）" % (kw, len(seen), liked, st["xhs"])
+        if blocked(sid) == "" and "search_result" not in (ev(sid, "location.href") or ""):
+            pass
+        return "小红书「%s」浏览%d篇 尝试%d 赞%d（今日%d）%s" % (kw, len(seen), tries, liked, st["xhs"], (" [诊断 " + diag + "]") if (tries and not liked) else "")
     finally:
         close_tab(tid)
 
